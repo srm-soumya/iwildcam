@@ -4,7 +4,7 @@ TODO
 # Ignore data directory -- except specified files / directories.
 # The trailing /* after data is significant. http://stackoverflow.com/a/5534865/100904
 data/*
-
+model/*
 # -------------------------------------------------------------------------
 # Ignore all files that generally ought not to be committed into the repo.
 # Never commit sensitive data.

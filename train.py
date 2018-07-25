@@ -6,12 +6,11 @@ import os
 import time
 import torch
 import torchvision
+import torch.distributed as dist
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from pathlib import Path
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms, models
+from torchvision import models
 from tqdm import tqdm
 
 from model.loader import create_dataloader
@@ -21,18 +20,20 @@ from model.net import ResnetFinetuned
 parser = argparse.ArgumentParser(
     'Specify the directory containing the dataset.')
 parser.add_argument('--dir', '-d', required=True)
-parser.add_argument('--num_epochs', '-n', default=3, type=int)
+parser.add_argument('--num-epochs', '-n', default=3, type=int)
+parser.add_argument('--world-size', default=1, type=int)
+parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str)
+parser.add_argument('--dist-backend', default='gloo', type=str)
+parser.add_argument('--rank', default=-1, type=int)
 
 
-bs = 60     # batch-size
-ps = 0.78   # dropout probability
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 cwd = Path.cwd()
 
 
 def train_model(model, dataset, dataloader, criterion, optimizer, scheduler, num_epochs):
     """Train the parameters of the model.
-    
+
     Returns:
         Trained model
     """
@@ -103,7 +104,7 @@ def freeze(layers):
 
 def save_model_weights(model, file):
     """Save the model weights.
-    
+
     Args:
         model: pytorch model
         file: file name to store inside model/weights/
@@ -112,34 +113,44 @@ def save_model_weights(model, file):
     torch.save(model.state_dict(), cwd/'model'/'weights'/file)
 
 
-def main(dir, num_epochs):
+def main(dir, args):
     # Create the loaders
-    dataset, dataloader = create_dataloader(dir) 
+    dataset, dataloader = create_dataloader(dir, args)
 
     # Load the pretrained resnet50 model
     resnet50 = models.resnet50(pretrained=True)
     # Create a custom head for the base resnet50 model
     model = ResnetFinetuned(model=resnet50)
-
     # Freeze the convolutional layers
     freeze(model.features)
-    # Move the model to GPU if available
-    model = model.to(device)
+
+    if not args.distributed:
+        # If not distributed, run in parallel mode in the same machine
+        model = nn.DataParallel(model).to(device)
+    else:
+        # If distributed run the model across different machines
+        model = model.to(device)
+        model = nn.parallel.DistributedDataParallel(model)
 
     # Define the criterion, optimizer and scheduler
-    criterion = nn.NLLLoss()
-    optimizer = optim.SGD(model.classifier.parameters(), lr=1e-2, momentum=0.9)
+    criterion = nn.NLLLoss().to(device)
+    optimizer = optim.SGD(model.module.classifier.parameters(), lr=1e-2, momentum=0.9)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
     # Train the model
     model = train_model(model, dataset, dataloader, criterion,
-                        optimizer, scheduler, num_epochs=num_epochs)
+                        optimizer, scheduler, num_epochs=args.num_epochs)
 
     save_model_weights(model, 'resnet18-finetuned-weights.pth')
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    args.distributed = args.world_size >= 2
+
+    if args.distributed:
+        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
+                                world_size=args.world_size, rank=args.rank)
+
     dir = cwd/args.dir
-    num_epochs = args.num_epochs
-    main(dir, num_epochs)
+    main(dir, args)

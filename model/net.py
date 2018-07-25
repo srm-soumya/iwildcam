@@ -4,10 +4,11 @@ import torch.nn as nn
 
 class AdaptiveConcatPool2d(nn.Module):
     """Concat along the channel dimension of AdaptiveAvgPool2d and AdaptiveMaxPool2d.
-    
+
     Args:
         size: size of pooling, default: (1, 1)
     """
+
     def __init__(self, size=(1, 1)):
         super().__init__()
         self.size = size
@@ -20,6 +21,7 @@ class AdaptiveConcatPool2d(nn.Module):
 
 class Flatten(nn.Module):
     """Flatten the input, but keep the batch-size."""
+
     def __init__(self):
         super().__init__()
 
@@ -29,7 +31,7 @@ class Flatten(nn.Module):
 
 def create_features(model, split):
     """Split the model and add AdaptiveConcatPool2d, Flatten layers.
-    
+
     Args:
         model: base model
         split: index to split
@@ -46,7 +48,7 @@ def create_features(model, split):
 
 def create_classifier(xtra_fc=[512], dropout=[0.78], classes=2):
     """Create classifier layer of the model.
-    
+
     Args:
         xtra_fc: list of linear units
         dropout: dropout in each layer
@@ -78,6 +80,7 @@ def create_classifier(xtra_fc=[512], dropout=[0.78], classes=2):
 
 class ResnetFinetuned(nn.Module):
     """Finetune Resnet model by adding custom head."""
+
     def __init__(self, model, split=8, xtra_fc=[512], dropout=[0.78], classes=2):
         super().__init__()
         self.features = create_features(model, split)
